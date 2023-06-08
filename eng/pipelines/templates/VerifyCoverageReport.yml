@@ -43,3 +43,12 @@ steps:
       filePath: $(Build.SourcesDirectory)/scripts/ValidateProjectCoverage.ps1
       arguments: >
         -CoberturaReportXml ./merged.cobertura.xml
+
+  - task: GitHubComment@0
+    enabled: ${{ eq(variables['runAsPublic'], 'true') }}
+    displayName: Report failure to GitHub
+    inputs:
+      gitHubConnection: public
+      id: $(System.PullRequest.PullRequestNumber)
+      comment: Boom!
+    condition: and(failed(), eq(variables['Build.Reason'], 'PullRequest'), , ne(variables['SkipCodeCoverage'], 'True'))
