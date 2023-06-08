@@ -222,9 +222,14 @@ stages:
         timeoutInMinutes: 180
 
         parameters:
+          artifacts:
+            publish:
+              artifacts: false
+              logs: false
           # Publish build logs
           enablePublishBuildArtifacts: false
           # Publish test logs
+          testResultsFormat: 'false'
           enablePublishTestResults: false
           # Publish NuGet packages using v3
           enablePublishUsingPipelines: false
