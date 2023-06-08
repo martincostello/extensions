@@ -51,9 +51,8 @@ variables:
   - name: DOTNET_SKIP_FIRST_TIME_EXPERIENCE
     value: true
 
-  # TEMP until all the x-cutting refactoring is complete
   - name: SkipCodeCoverage
-    value: true
+    value: false
 
   - name: runAsPublic
     value: ${{ eq(variables['System.TeamProject'], 'public') }}
@@ -140,6 +139,10 @@ stages:
         clean: all
 
       jobs:
+
+      # ----------------------------------------------------------------
+      # This job build and run tests on Windows
+      # ----------------------------------------------------------------
       - job: Windows
         timeoutInMinutes: 180
         testResultsFormat: VSTest
@@ -174,6 +177,9 @@ stages:
               isWindows: true
               warnAsError: 0
 
+      # ----------------------------------------------------------------
+      # This job build and run tests on Ubuntu
+      # ----------------------------------------------------------------
       - job: Ubuntu
         timeoutInMinutes: 180
         testResultsFormat: VSTest
@@ -203,12 +209,56 @@ stages:
               buildConfig: $(_BuildConfig)
               repoLogPath: $(Build.Arcade.LogsPath)
               repoTestResultsPath: $(Build.Arcade.TestResultsPath)
-              skipCodeCoverage: true
+              skipCodeCoverage: ${{ eq(variables['SkipCodeCoverage'], 'true') }}
               isDeltaBuild: $(IsDeltaBuild)
               isWindows: false
               warnAsError: 0
 
+      # ----------------------------------------------------------------
+      # This job downloads the code coverage reports from the build jobs,
+      # merges those and validates the combined test coverage.
+      # ----------------------------------------------------------------
+      - job: CodeCoverageReport
+        timeoutInMinutes: 180
 
+        pool:
+          ${{ if eq(variables['runAsPublic'], 'true') }}:
+            name: $(DncEngPublicBuildPool)
+            demands: ImageOverride -equals build.ubuntu.2004.amd64.open
+          # Non-public (i.e., official builds)
+          ${{ else }}:
+            name: $(DncEngInternalBuildPool)
+            demands: ImageOverride -equals build.ubuntu.2004.amd64
+
+        dependsOn: 
+          - Windows
+          - Ubuntu
+        condition: succeeded()
+
+        variables:
+          - _buildScript: $(Build.SourcesDirectory)/build.sh --ci
+
+        preSteps:
+          - checkout: self
+            clean: true
+            persistCredentials: true
+            fetchDepth: 1
+
+        steps:
+        - script: $(_buildScript) -restore
+          displayName: Init toolset
+          condition: ne(variables['SkipCodeCoverage'], 'True')
+
+        - template: \eng\pipelines\templates\VerifyCoverageReport.yml
+          parameters:
+            isDeltaBuild: $(IsDeltaBuild)
+            repoLogPath: $(Build.Arcade.LogsPath)
+
+
+# ----------------------------------------------------------------
+# This stage only performs a build treating warnings as errors
+# to detect any kind of code style violations
+# ----------------------------------------------------------------
 - stage: correctness
   displayName: Correctness
   dependsOn: []

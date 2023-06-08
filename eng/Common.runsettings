@@ -11,7 +11,7 @@
         <Configuration>
           <Format>cobertura</Format>
           <Exclude>[*.Tests]*</Exclude> <!-- [Assembly-Filter]Type-Filter -->
-          <Include>[Microsoft.*]*,[System*]*</Include>
+          <Include>[Microsoft.AspNetCore.*]*,[Microsoft.Extensions.]*,[System.Cloud.*]*</Include>
           <ExcludeByAttribute>ExcludeFromCodeCoverageAttribute,DebuggerNonUserCodeAttribute,DebuggerHiddenAttribute,GeneratedCodeAttribute</ExcludeByAttribute>
         </Configuration>
       </DataCollector>
