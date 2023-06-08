@@ -1,8 +1,6 @@
 parameters:
   - name: isDeltaBuild
     type: string
-  - name: repoLogPath
-    type: string
 
 steps:
   - task: DownloadBuildArtifacts@0
