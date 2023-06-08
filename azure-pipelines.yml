@@ -221,6 +221,15 @@ stages:
       - job: CodeCoverageReport
         timeoutInMinutes: 180
 
+        parameters:
+          # Publish build logs
+          enablePublishBuildArtifacts: false
+          # Publish test logs
+          enablePublishTestResults: false
+          # Publish NuGet packages using v3
+          enablePublishUsingPipelines: false
+          enablePublishBuildAssets: false
+
         pool:
           ${{ if eq(variables['runAsPublic'], 'true') }}:
             name: $(DncEngPublicBuildPool)
