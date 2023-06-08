@@ -34,3 +34,12 @@ steps:
       summaryFileLocation: ./merged.cobertura.xml
       pathToSources: $(Build.SourcesDirectory)
       reportDirectory: ./CoverageResultsHtml
+
+  - task: PowerShell@2
+    displayName: Check per-project coverage
+    condition: and(succeeded(), ne(variables['IsDeltaBuild'], 'True'), ne(variables['SkipCodeCoverage'], 'True'))
+    inputs:
+      targetType: 'filePath'
+      filePath: $(Build.SourcesDirectory)/scripts/ValidateProjectCoverage.ps1
+      arguments: >
+        -CoberturaReportXml ./merged.cobertura.xml
