@@ -30,9 +30,6 @@ using Xunit;
 
 namespace Microsoft.Extensions.Http.Telemetry.Metering.Test;
 
-#pragma warning disable CA2000 // Not necessary to dispose all resources in test class.
-#pragma warning disable VSTHRD002 // Avoid problematic synchronous waits
-
 public sealed partial class HttpMeteringHandlerTests : IDisposable
 {
     private const long DefaultClockAdvanceMs = 200;
@@ -119,31 +116,32 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
     }
 
     [Fact]
-    public void SendAsync_Success_NoNamesSet()
+    public async Task SendAsync_Success_NoNamesSet()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         using var client = CreateClientWithHandler(meter);
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Put, _successfulUri);
 
-        using var _ = client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token).Result;
+        using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal(TelemetryConstants.Unknown, latest.GetDimension(Metric.DependencyName));
-        Assert.Equal($"PUT {TelemetryConstants.Unknown}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, TelemetryConstants.Unknown),
+            new(Metric.ReqName, $"PUT {TelemetryConstants.Unknown}"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
-    public void SendAsync_Success()
+    public async Task SendAsync_Success()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter);
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, _successfulUri);
@@ -153,25 +151,26 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
             RequestRoute = "/foo"
         });
 
-        using var _ = client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token).Result;
+        using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal($"GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
-    public void PerfStopwatch_ReturnsTotalMilliseconds_InsteadOfFraction()
+    public async Task PerfStopwatch_ReturnsTotalMilliseconds_InsteadOfFraction()
     {
         const long TimeAdvanceMs = 1500L; // We need to use any value greater than 1000 (1 second)
         const string ServiceName = "success_service";
 
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter);
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, _successfulUri);
@@ -183,23 +182,23 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
         _clockAdvanceMs = TimeAdvanceMs;
 
-        using var _ = client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token).Result;
+        using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
-
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
     public async Task SendAsync_Exception()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter);
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Post, _failureUri);
@@ -215,21 +214,21 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
             using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
         });
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
-
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-failure.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("failure_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("POST TestRequestName", latest.GetDimension(Metric.ReqName));
-        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Failure.ToInvariantString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-failure.com"),
+            new(Metric.DependencyName, "failure_service"),
+            new(Metric.ReqName, "POST TestRequestName"),
+            new(Metric.RspResultCode, (int)HttpStatusCode.ServiceUnavailable),
+            new(Metric.RspResultCategory, HttpRequestResultType.Failure.ToString())));
     }
 
     [Fact]
-    public void SendAsync_SetReqMetadata_OnAsyncContext_Success()
+    public async Task SendAsync_SetReqMetadata_OnAsyncContext_Success()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var requestMetadataContextMock = new Mock<IOutgoingRequestContext>();
         using var client = CreateClientWithHandler(meter, requestMetadataContextMock.Object);
 
@@ -240,26 +239,26 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         };
         requestMetadataContextMock.Setup(m => m.RequestMetadata).Returns(requestMetadata);
 
-        using var _ = client.GetAsync(_successfulUri, _cancellationTokenSource.Token).Result;
+        using var _ = await client.GetAsync(_successfulUri, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
-
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
-    public void PerfStopwatch_SetReqMetadata_OnAsyncContext_ReturnsTotalMilliseconds_InsteadOfFraction()
+    public async Task PerfStopwatch_SetReqMetadata_OnAsyncContext_ReturnsTotalMilliseconds_InsteadOfFraction()
     {
         const long TimeAdvanceMs = 1500L; // We need to use any value greater than 1000 (1 second)
         const string ServiceName = "success_service";
 
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var requestMetadataContextMock = new Mock<IOutgoingRequestContext>();
         using var client = CreateClientWithHandler(meter, requestMetadataContextMock.Object);
 
@@ -273,23 +272,23 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
         _clockAdvanceMs = TimeAdvanceMs;
 
-        using var _ = client.GetAsync(_successfulUri, _cancellationTokenSource.Token).Result;
+        using var _ = await client.GetAsync(_successfulUri, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
-
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
     public async Task SendAsync_SetReqMetadata_OnAsyncContext_Exception()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var requestMetadataContextMock = new Mock<IOutgoingRequestContext>();
         using var client = CreateClientWithHandler(meter, requestMetadataContextMock.Object);
 
@@ -308,21 +307,22 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
             using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
         });
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-failure.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("failure_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("POST TestRequestName", latest.GetDimension(Metric.ReqName));
-        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Failure.ToInvariantString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-failure.com"),
+            new(Metric.DependencyName, "failure_service"),
+            new(Metric.ReqName, "POST TestRequestName"),
+            new(Metric.RspResultCode, (int)HttpStatusCode.ServiceUnavailable),
+            new(Metric.RspResultCategory, HttpRequestResultType.Failure.ToString())));
     }
 
     [Fact]
-    public void SendAsync_WithDownstreamDependencyMetadata_OnAsyncContext_Success()
+    public async Task SendAsync_WithDownstreamDependencyMetadata_OnAsyncContext_Success()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         using var client = CreateClientWithHandler(meter, downstreamDependencyMetadataManager: downstreamDependencyMetadataManagerMock.Object);
 
@@ -336,26 +336,27 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
             .Setup(m => m.GetRequestMetadata(It.IsAny<HttpRequestMessage>()))
             .Returns(requestMetadata);
 
-        using var _ = client.GetAsync(_successfulUri, _cancellationTokenSource.Token).Result;
+        using var _ = await client.GetAsync(_successfulUri, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
-    public void PerfStopwatch_WithDownstreamDependencyMetadata_OnAsyncContext_ReturnsTotalMilliseconds_InsteadOfFraction()
+    public async Task PerfStopwatch_WithDownstreamDependencyMetadata_OnAsyncContext_ReturnsTotalMilliseconds_InsteadOfFraction()
     {
         const long TimeAdvanceMs = 1500L; // We need to use any value greater than 1000 (1 second)
         const string ServiceName = "success_service";
 
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         using var client = CreateClientWithHandler(meter, downstreamDependencyMetadataManager: downstreamDependencyMetadataManagerMock.Object);
 
@@ -369,23 +370,24 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
         _clockAdvanceMs = TimeAdvanceMs;
 
-        using var _ = client.GetAsync(_successfulUri, _cancellationTokenSource.Token).Result;
+        using var _ = await client.GetAsync(_successfulUri, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
     }
 
     [Fact]
     public async Task SendAsync_WithDownstreamDependencyMetadata_OnAsyncContext_Exception()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         var dependencyDataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         using var client = CreateClientWithHandler(meter, downstreamDependencyMetadataManager: dependencyDataManagerMock.Object);
 
@@ -403,14 +405,15 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
             using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
         });
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-failure.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("failure_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("POST TestRequestName", latest.GetDimension(Metric.ReqName));
-        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Failure.ToInvariantString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-failure.com"),
+            new(Metric.DependencyName, "failure_service"),
+            new(Metric.ReqName, "POST TestRequestName"),
+            new(Metric.RspResultCode, (int)HttpStatusCode.ServiceUnavailable),
+            new(Metric.RspResultCategory, HttpRequestResultType.Failure.ToString())));
     }
 
     [Fact]
@@ -428,7 +431,7 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         for (int i = 1; i <= 14; i++)
         {
             using var meter = new Meter<HttpMeteringHandler>();
-            using var metricCollector = new MetricCollector(meter);
+            using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
             using var client = CreateClientWithHandler(meter, new List<IOutgoingRequestMetricEnricher>
                 {
                     new TestEnricher(i),
@@ -443,18 +446,19 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
             using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-            var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+            var latest = metricCollector.LatestMetricValueUpdated;
 
             Assert.NotNull(latest);
-            Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-            Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-            Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-            Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-            Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
+            Assert.True(latest.ContainsDimensions(
+                new(Metric.ReqHost, "www.example-success.com"),
+                new(Metric.DependencyName, "success_service"),
+                new(Metric.ReqName, "GET /foo"),
+                new(Metric.RspResultCode, 201),
+                new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString())));
 
             for (int j = 0; j < i; j++)
             {
-                Assert.Equal($"test_value_{j + 1}", latest.GetDimension($"test_property_{j + 1}"));
+                Assert.Equal($"test_value_{j + 1}", latest.Tags[$"test_property_{j + 1}"]);
             }
         }
     }
@@ -465,7 +469,7 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         for (int i = 1; i <= 14; i++)
         {
             using var meter = new Meter<HttpMeteringHandler>();
-            using var metricCollector = new MetricCollector(meter);
+            using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
             using var handler = new HttpMeteringHandler(meter, new[] { new TestEnricher(i) })
             {
                 InnerHandler = new TestHandlerStub(InnerHandlerFunction)
@@ -482,17 +486,18 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
             using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-            var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+            var latest = metricCollector.LatestMetricValueUpdated;
 
             Assert.NotNull(latest);
-            Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-            Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-            Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-            Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
+            Assert.True(latest.ContainsDimensions(
+                new(Metric.ReqHost, "www.example-success.com"),
+                new(Metric.DependencyName, "success_service"),
+                new(Metric.ReqName, "GET /foo"),
+                new(Metric.RspResultCode, 201)));
 
             for (int j = 0; j < i; j++)
             {
-                Assert.Equal($"test_value_{j + 1}", latest.GetDimension($"test_property_{j + 1}"));
+                Assert.Equal($"test_value_{j + 1}", latest.Tags[$"test_property_{j + 1}"]);
             }
         }
     }
@@ -501,12 +506,12 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
     public async Task InvokeAsync_HttpMeteringHandler_MultipleEnrichers()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter, new List<IOutgoingRequestMetricEnricher>
-            {
-                new TestEnricher(2),
-                new TestEnricher(2, "2"),
-            });
+        {
+            new TestEnricher(2),
+            new TestEnricher(2, "2"),
+        });
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, _successfulUri);
         httpRequestMessage.SetRequestMetadata(new RequestMetadata
@@ -516,25 +521,26 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         });
 
         using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
-        Assert.Equal("test_value_1", latest.GetDimension("test_property_1"));
-        Assert.Equal("test_value_2", latest.GetDimension("test_property_2"));
-        Assert.Equal("test_value_21", latest.GetDimension("test_property_21"));
-        Assert.Equal("test_value_22", latest.GetDimension("test_property_22"));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString()),
+            new("test_property_1", "test_value_1"),
+            new("test_property_2", "test_value_2"),
+            new("test_property_21", "test_value_21"),
+            new("test_property_22", "test_value_22")));
     }
 
     [Fact]
     public async Task InvokeAsync_HttpMeteringHandler_PropertyBagEdgeCase()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter, new List<IOutgoingRequestMetricEnricher>
             {
                 new PropertyBagEdgeCaseEnricher(),
@@ -548,15 +554,16 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         });
 
         using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("www.example-success.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("success_service", latest.GetDimension(Metric.DependencyName));
-        Assert.Equal("GET /foo", latest.GetDimension(Metric.ReqName));
-        Assert.Equal(201, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Success.ToString(), latest.GetDimension(Metric.RspResultCategory));
-        Assert.Equal("test_val", latest.GetDimension("non_null_object_property"));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-success.com"),
+            new(Metric.DependencyName, "success_service"),
+            new(Metric.ReqName, "GET /foo"),
+            new(Metric.RspResultCode, 201),
+            new(Metric.RspResultCategory, HttpRequestResultType.Success.ToString()),
+            new("non_null_object_property", "test_val")));
     }
 
     [Fact]
@@ -858,7 +865,7 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_WithDownstreamDependencyMetadata_UsesIt()
+    public static async Task AddHttpClientMeteringForAllHttpClients_WithDownstreamDependencyMetadata_UsesIt()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -880,7 +887,7 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .GetRequiredService<IHttpClientFactory>()
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
-        using var _ = client.GetAsync("https://www.bing.com").Result;
+        using var _ = await client.GetAsync("https://www.bing.com");
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
         downstreamDependencyMetadataManagerMock.Verify(m => m.GetRequestMetadata(It.IsAny<HttpRequestMessage>()), Times.AtLeastOnce);
@@ -888,7 +895,7 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnException()
+    public static async Task AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnException()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -909,22 +916,22 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
-        Assert.Throws<AggregateException>(() => client.GetAsync("https://localhost:12345").Result);
+        await Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetAsync("https://localhost:12345"));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var record = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated;
         Assert.NotNull(record);
         Assert.True(record.Value > 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal((int)HttpStatusCode.ServiceUnavailable, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnTaskCancelledException()
+    public static async Task AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnTaskCancelledException()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -945,27 +952,27 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
 
         var cts = new CancellationTokenSource();
         using var testObserver = new RequestCancellationTestObserver(cts);
 
-        Assert.Throws<AggregateException>(() => client.GetAsync("https://www.bing.com", cts.Token).Result);
+        await Assert.ThrowsAsync<TaskCanceledException>(async () => await client.GetAsync("https://www.bing.com", cts.Token));
 
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var record = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated;
         Assert.NotNull(record);
         Assert.True(record.Value >= 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal((int)HttpStatusCode.GatewayTimeout, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal((int)HttpStatusCode.GatewayTimeout, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnError()
+    public static async Task AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnError()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -986,22 +993,22 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
-        _ = client.GetAsync("https://www.bing.com/request").Result;
+        _ = await client.GetAsync("https://www.bing.com/request");
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var record = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated;
         Assert.NotNull(record);
         Assert.True(record.Value > 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal((int)HttpStatusCode.NotFound, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal((int)HttpStatusCode.NotFound, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnSuccessResponse()
+    public static async Task AddHttpClientMeteringForAllHttpClients_EmitMetrics_OnSuccessResponse()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -1022,22 +1029,22 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
-        using var _ = client.GetAsync("https://www.bing.com").Result;
+        using var _ = await client.GetAsync("https://www.bing.com");
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var record = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated;
         Assert.NotNull(record);
         Assert.True(record.Value > 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal(200, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal(200, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
     [Fact]
-    public static void AddHttpClientMeteringForAllHttpClients_CaptureMetrics_ForNonHttpClientFactoryClients()
+    public static async Task AddHttpClientMeteringForAllHttpClients_CaptureMetrics_ForNonHttpClientFactoryClients()
     {
         var downstreamDependencyMetadataManagerMock = new Mock<IDownstreamDependencyMetadataManager>();
         downstreamDependencyMetadataManagerMock
@@ -1051,24 +1058,24 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
 
         host.Start();
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         using var client = new System.Net.Http.HttpClient();
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
-        using var _ = client.GetAsync("https://www.bing.com").Result;
+        using var _ = await client.GetAsync("https://www.bing.com");
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var record = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated;
         Assert.NotNull(record);
         Assert.True(record.Value > 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal(200, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal(200, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
-    [Fact(Skip = "Flaky")]
-    public static void When_DiagSourceAndDelegatingHandler_BothConfigured_MetricsOnlyEmittedOnce()
+    [Fact]
+    public static async Task When_DiagSourceAndDelegatingHandler_BothConfigured_MetricsOnlyEmittedOnce()
     {
         using var host = FakeHost.CreateBuilder()
             .ConfigureServices((_, services) => services
@@ -1083,20 +1090,20 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
              .CreateClient(nameof(AddDefaultHttpClientMetering_WithDownstreamDependencyMetadata_UsesIt));
 
         var meter = host.Services.GetRequiredService<Meter<HttpMeteringHandler>>();
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         DateTimeOffset startTime = DateTimeOffset.UtcNow;
-        using var _ = client.GetAsync("https://www.bing.com").Result;
+        using var _ = await client.GetAsync("https://www.bing.com");
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
 
-        var records = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!;
+        var records = meterCollector.SnapshotMetricValues();
         Assert.NotNull(records);
-        Assert.Equal(1, records.AllValues.Count);
+        Assert.Equal(1, records.Count);
 
-        var record = records.LatestWritten!;
+        var record = meterCollector.LatestMetricValueUpdated!;
         Assert.True(record.Value > 0);
         Assert.True(record.Value <= (DateTimeOffset.UtcNow - startTime).TotalMilliseconds);
-        Assert.Equal(200, record.GetDimension(Metric.RspResultCode));
+        Assert.Equal(200, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 
@@ -1138,38 +1145,39 @@ public sealed partial class HttpMeteringHandlerTests : IDisposable
         httpClientRequestAdapter.HttpClientListenerSubscribed(httpRequestMessage);
         httpClientRequestAdapter.OnRequestStart(httpRequestMessage);
 
-        using var meterCollector = new MetricCollector(meter);
+        using var meterCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
 
         httpClientRequestAdapter.OnRequestStop(null, httpRequestMessage, TaskStatus.RanToCompletion);
 
-        var records = meterCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!;
+        var records = meterCollector.SnapshotMetricValues();
         Assert.NotNull(records);
-        Assert.Equal(1, records.AllValues.Count);
+        Assert.Equal(1, records.Count);
 
-        var record = records.LatestWritten!;
-        Assert.Equal((int)HttpStatusCode.InternalServerError, record.GetDimension(Metric.RspResultCode));
+        var record = meterCollector.LatestMetricValueUpdated!;
+        Assert.Equal((int)HttpStatusCode.InternalServerError, record.Tags.GetValueOrDefault(Metric.RspResultCode));
         HttpClientMeteringListener.UsingDiagnosticsSource = false;
     }
 #endif
 
     [Fact]
-    public void SendAsync_Failure_NoExceptionThrown()
+    public async Task SendAsync_Failure_NoExceptionThrown()
     {
         using var meter = new Meter<HttpMeteringHandler>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, Metric.OutgoingRequestMetricName);
         using var client = CreateClientWithHandler(meter);
 
         using var httpRequestMessage = new HttpRequestMessage(HttpMethod.Get, _internalServerErrorUri);
 
-        using var _ = client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token).Result;
+        using var _ = await client.SendAsync(httpRequestMessage, _cancellationTokenSource.Token);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.OutgoingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
         Assert.NotNull(latest);
-        Assert.Equal("www.example-failure.com", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal(TelemetryConstants.Unknown, latest.GetDimension(Metric.DependencyName));
-        Assert.Equal($"GET {TelemetryConstants.Unknown}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal((int)HttpStatusCode.InternalServerError, latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(HttpRequestResultType.Failure.ToInvariantString(), latest.GetDimension(Metric.RspResultCategory));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "www.example-failure.com"),
+            new(Metric.DependencyName, TelemetryConstants.Unknown),
+            new(Metric.ReqName, $"GET {TelemetryConstants.Unknown}"),
+            new(Metric.RspResultCode, (int)HttpStatusCode.InternalServerError),
+            new(Metric.RspResultCategory, HttpRequestResultType.Failure.ToInvariantString())));
     }
 #pragma warning restore VSTHRD002 // Avoid problematic synchronous waits
 }

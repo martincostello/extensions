@@ -20,7 +20,7 @@ public class FaultInjectionTelemetryHandlerTests
         var logger = Mock.Of<ILogger<IHttpClientChaosPolicyFactory>>();
 
         using var meter = new Meter<IChaosPolicyFactory>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, MetricName);
         var counter = meter.CreateCounter<long>(MetricName);
         var metricCounter = new HttpClientFaultInjectionMetricCounter(counter);
 
@@ -31,14 +31,15 @@ public class FaultInjectionTelemetryHandlerTests
 
         FaultInjectionTelemetryHandler.LogAndMeter(logger, metricCounter, GroupName, FaultType, InjectedValue, HttpContentKey);
 
-        var latest = metricCollector.GetCounterValues<long>(MetricName)!.LatestWritten;
+        var latest = metricCollector.LatestMetricValueUpdated!;
 
         Assert.NotNull(latest);
         Assert.Equal(1, latest.Value);
-        Assert.Equal(GroupName, latest.GetDimension(FaultInjectionEventMeterDimensions.FaultInjectionGroupName));
-        Assert.Equal(FaultType, latest.GetDimension(FaultInjectionEventMeterDimensions.FaultType));
-        Assert.Equal(InjectedValue, latest.GetDimension(FaultInjectionEventMeterDimensions.InjectedValue));
-        Assert.Equal(HttpContentKey, latest.GetDimension(FaultInjectionEventMeterDimensions.HttpContentKey));
+        Assert.True(latest.ContainsDimensions(
+            new(FaultInjectionEventMeterDimensions.FaultInjectionGroupName, GroupName),
+            new(FaultInjectionEventMeterDimensions.FaultType, FaultType),
+            new(FaultInjectionEventMeterDimensions.InjectedValue, InjectedValue),
+            new(FaultInjectionEventMeterDimensions.HttpContentKey, HttpContentKey)));
     }
 
     [Fact]
@@ -47,7 +48,7 @@ public class FaultInjectionTelemetryHandlerTests
         var logger = Mock.Of<ILogger<IHttpClientChaosPolicyFactory>>();
 
         using var meter = new Meter<IChaosPolicyFactory>();
-        using var metricCollector = new MetricCollector(meter);
+        using var metricCollector = new MetricCollector<long>(meter, MetricName);
         var counter = meter.CreateCounter<long>(MetricName);
         var metricCounter = new HttpClientFaultInjectionMetricCounter(counter);
 
@@ -58,13 +59,14 @@ public class FaultInjectionTelemetryHandlerTests
 
         FaultInjectionTelemetryHandler.LogAndMeter(logger, metricCounter, GroupName, FaultType, InjectedValue, httpContentKey: null);
 
-        var latest = metricCollector.GetCounterValues<long>(MetricName)!.LatestWritten;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
         Assert.Equal(1, latest.Value);
-        Assert.Equal(GroupName, latest.GetDimension(FaultInjectionEventMeterDimensions.FaultInjectionGroupName));
-        Assert.Equal(FaultType, latest.GetDimension(FaultInjectionEventMeterDimensions.FaultType));
-        Assert.Equal(InjectedValue, latest.GetDimension(FaultInjectionEventMeterDimensions.InjectedValue));
-        Assert.Equal(HttpContentKey, latest.GetDimension(FaultInjectionEventMeterDimensions.HttpContentKey));
+        Assert.True(latest.ContainsDimensions(
+            new(FaultInjectionEventMeterDimensions.FaultInjectionGroupName, GroupName),
+            new(FaultInjectionEventMeterDimensions.FaultType, FaultType),
+            new(FaultInjectionEventMeterDimensions.InjectedValue, InjectedValue),
+            new(FaultInjectionEventMeterDimensions.HttpContentKey, HttpContentKey)));
     }
 }

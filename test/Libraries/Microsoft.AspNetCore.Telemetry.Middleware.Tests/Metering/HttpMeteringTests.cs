@@ -49,7 +49,7 @@ public class HttpMeteringTests
     [Fact]
     public async Task CanLogIncomingRequestMetric()
     {
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         using var host = await FakeHost.CreateBuilder()
             .ConfigureWebHost(webBuilder => webBuilder
                 .UseTestServer()
@@ -72,13 +72,15 @@ public class HttpMeteringTests
         using var client = host.GetTestClient();
         using var response = client.GetAsync("/some/route/123").Result;
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("401", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route/{routeId}"),
+            new(Metric.RspResultCode, "401"),
+            new(Metric.ExceptionType, "no_exception")));
+
 
         await host.StopAsync();
     }
@@ -88,7 +90,7 @@ public class HttpMeteringTests
     {
         IIncomingRequestMetricEnricher testEnricher = new TestEnricher(2, "2");
 
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         using var host = await FakeHost.CreateBuilder()
             .ConfigureWebHost(webBuilder =>
                 webBuilder
@@ -119,16 +121,17 @@ public class HttpMeteringTests
         using var client = host.GetTestClient();
         using var response = await client.GetAsync("/some/route/123").ConfigureAwait(false);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("401", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
-        Assert.Equal("test_value_1", latest.GetDimension("test_property_1"));
-        Assert.Equal("test_value_21", latest.GetDimension("test_property_21"));
-        Assert.Equal("test_value_22", latest.GetDimension("test_property_22"));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route/{routeId}"),
+            new(Metric.RspResultCode, "401"),
+            new(Metric.ExceptionType, "no_exception"),
+            new("test_property_1", "test_value_1"),
+            new("test_property_21", "test_value_21"),
+            new("test_property_22", "test_value_22")));
 
         await host.StopAsync();
     }
@@ -136,8 +139,7 @@ public class HttpMeteringTests
     [Fact]
     public async Task CanLogIncomingRequestMetric_UseRoutingAfterMiddleware()
     {
-        using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         using var host = await FakeHost.CreateBuilder()
             .ConfigureWebHost(webBuilder =>
                 webBuilder
@@ -164,13 +166,14 @@ public class HttpMeteringTests
         using var client = host.GetTestClient();
         using var response = await client.GetAsync("/some/route/456").ConfigureAwait(false);
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("503", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route/{routeId}"),
+            new(Metric.RspResultCode, "503"),
+            new(Metric.ExceptionType, "no_exception")));
 
         await host.StopAsync();
     }
@@ -178,8 +181,7 @@ public class HttpMeteringTests
     [Fact]
     public async Task CanLogIncomingRequestMetric_TimeoutException()
     {
-        using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         using var host = await FakeHost.CreateBuilder()
             .ConfigureWebHost(webBuilder => webBuilder
                 .UseTestServer()
@@ -219,35 +221,38 @@ public class HttpMeteringTests
         using var client = host.GetTestClient();
 
         await Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetAsync("/some/route/456"));
-
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated!;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("500", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(exceptionTypeName, latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route/{routeId}"),
+            new(Metric.RspResultCode, "500"),
+            new(Metric.ExceptionType, exceptionTypeName)));
+
         metricCollector.Clear();
 
         await Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetAsync("/some/route2/456"));
-        latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        latest = metricCollector.LatestMetricValueUpdated!;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route2/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("400", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(exceptionTypeName, latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route2/{routeId}"),
+            new(Metric.RspResultCode, "400"),
+            new(Metric.ExceptionType, exceptionTypeName)));
+
         metricCollector.Clear();
 
         await Assert.ThrowsAsync<HttpRequestException>(async () => await client.GetAsync("/some/route3/456"));
-        latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal("localhost", latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET /some/route3/{routeId}", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("500", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(exceptionTypeName, latest.GetDimension(Metric.ExceptionType));
-        metricCollector.Clear();
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, "localhost"),
+            new(Metric.ReqName, "GET /some/route3/{routeId}"),
+            new(Metric.RspResultCode, "500"),
+            new(Metric.ExceptionType, exceptionTypeName)));
 
         await host.StopAsync();
     }
@@ -260,7 +265,7 @@ public class HttpMeteringTests
         string route = "/tenant/{tenantid}/users/{userId}";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>());
 
         var context = new DefaultHttpContext();
@@ -272,13 +277,14 @@ public class HttpMeteringTests
 
         middleware.InvokeAsync(context, _advanceTimeRequestDelegate).Wait();
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET " + route, latest.GetDimension(Metric.ReqName));
-        Assert.Equal("200", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "GET " + route),
+            new(Metric.RspResultCode, "200"),
+            new(Metric.ExceptionType, "no_exception")));
     }
 
     [Fact]
@@ -291,7 +297,7 @@ public class HttpMeteringTests
         string route = "/tenant/{tenantid}/users/{userId}";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>());
 
         var context = new DefaultHttpContext();
@@ -309,13 +315,14 @@ public class HttpMeteringTests
 
         middleware.InvokeAsync(context, next).Wait();
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET " + route, latest.GetDimension(Metric.ReqName));
-        Assert.Equal("200", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "GET " + route),
+            new(Metric.RspResultCode, "200"),
+            new(Metric.ExceptionType, "no_exception")));
     }
 
     [Fact]
@@ -325,7 +332,7 @@ public class HttpMeteringTests
         string hostString = "teams.microsoft.com";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>());
 
         var context = new DefaultHttpContext();
@@ -335,13 +342,14 @@ public class HttpMeteringTests
 
         middleware.InvokeAsync(context, _advanceTimeRequestDelegate).Wait();
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("POST unsupported_route", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("409", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "POST unsupported_route"),
+            new(Metric.RspResultCode, "409"),
+            new(Metric.ExceptionType, "no_exception")));
     }
 
     [Fact]
@@ -351,7 +359,7 @@ public class HttpMeteringTests
         string expectedHostString = "unknown_host_name";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>());
 
         var context = new DefaultHttpContext();
@@ -360,13 +368,14 @@ public class HttpMeteringTests
 
         middleware.InvokeAsync(context, _advanceTimeRequestDelegate).Wait();
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(expectedHostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("POST unsupported_route", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("409", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, expectedHostString),
+            new(Metric.ReqName, "POST unsupported_route"),
+            new(Metric.RspResultCode, "409"),
+            new(Metric.ExceptionType, "no_exception")));
     }
 
     [Fact]
@@ -376,7 +385,7 @@ public class HttpMeteringTests
         string hostString = "teams.microsoft.com";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>());
 
         var context = new DefaultHttpContext();
@@ -387,13 +396,14 @@ public class HttpMeteringTests
 
         Assert.Throws<InvalidOperationException>(() => middleware.InvokeAsync(context, next).RunSynchronously());
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("POST unsupported_route", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("500", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal(typeof(InvalidOperationException).FullName!, latest.GetDimension(Metric.ExceptionType));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "POST unsupported_route"),
+            new(Metric.RspResultCode, "500"),
+            new(Metric.ExceptionType, typeof(InvalidOperationException).FullName)));
     }
 
     [Fact]
@@ -404,7 +414,7 @@ public class HttpMeteringTests
         for (int i = 1; i <= 15; i++)
         {
             using var meter = new Meter<HttpMeteringMiddleware>();
-            using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+            using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
             var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>
                 {
                     new TestEnricher(i)
@@ -417,17 +427,18 @@ public class HttpMeteringTests
 
             middleware.InvokeAsync(context, Mock.Of<RequestDelegate>()).Wait();
 
-            var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+            var latest = metricCollector.LatestMetricValueUpdated;
 
             Assert.NotNull(latest);
-            Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-            Assert.Equal("GET unsupported_route", latest.GetDimension(Metric.ReqName));
-            Assert.Equal("409", latest.GetDimension(Metric.RspResultCode));
-            Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
+            Assert.True(latest.ContainsDimensions(
+                new(Metric.ReqHost, hostString),
+                new(Metric.ReqName, "GET unsupported_route"),
+                new(Metric.RspResultCode, "409"),
+                new(Metric.ExceptionType, "no_exception")));
 
             for (int j = 0; j < i; j++)
             {
-                Assert.Equal($"test_value_{j + 1}", latest.GetDimension($"test_property_{j + 1}"));
+                Assert.Equal($"test_value_{j + 1}", latest.Tags.GetValueOrDefault($"test_property_{j + 1}"));
             }
         }
     }
@@ -438,7 +449,7 @@ public class HttpMeteringTests
         string hostString = "teams.microsoft.com";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>
             {
                 new TestEnricher(2),
@@ -452,18 +463,18 @@ public class HttpMeteringTests
 
         middleware.InvokeAsync(context, Mock.Of<RequestDelegate>()).Wait();
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("GET unsupported_route", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("409", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
-
-        Assert.Equal("test_value_1", latest.GetDimension("test_property_1"));
-        Assert.Equal("test_value_2", latest.GetDimension("test_property_2"));
-        Assert.Equal("test_value_21", latest.GetDimension("test_property_21"));
-        Assert.Equal("test_value_22", latest.GetDimension("test_property_22"));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "GET unsupported_route"),
+            new(Metric.RspResultCode, "409"),
+            new(Metric.ExceptionType, "no_exception"),
+            new("test_property_1", "test_value_1"),
+            new("test_property_2", "test_value_2"),
+            new("test_property_21", "test_value_21"),
+            new("test_property_22", "test_value_22")));
     }
 
     [Fact]
@@ -473,7 +484,7 @@ public class HttpMeteringTests
         string hostString = "teams.microsoft.com";
 
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         var middleware = SetupMockMiddleware(meter: meter, new List<IIncomingRequestMetricEnricher>
             {
                 new PropertyBagEdgeCaseEnricher()
@@ -486,27 +497,27 @@ public class HttpMeteringTests
 
         await middleware.InvokeAsync(context, Mock.Of<RequestDelegate>());
 
-        var latest = metricCollector.GetHistogramValues<long>(Metric.IncomingRequestMetricName)!.LatestWritten!;
+        var latest = metricCollector.LatestMetricValueUpdated;
 
         Assert.NotNull(latest);
-        Assert.Equal(hostString, latest.GetDimension(Metric.ReqHost));
-        Assert.Equal("POST unsupported_route", latest.GetDimension(Metric.ReqName));
-        Assert.Equal("409", latest.GetDimension(Metric.RspResultCode));
-        Assert.Equal("no_exception", latest.GetDimension(Metric.ExceptionType));
-
-        Assert.Equal("test_val", latest.GetDimension("non_null_object_property"));
+        Assert.True(latest.ContainsDimensions(
+            new(Metric.ReqHost, hostString),
+            new(Metric.ReqName, "POST unsupported_route"),
+            new(Metric.RspResultCode, "409"),
+            new(Metric.ExceptionType, "no_exception"),
+            new("non_null_object_property", "test_val")));
     }
 
     [Fact]
     public void HttpMeteringMiddleware_Fail_16DEnrich()
     {
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         Assert.Throws<ArgumentOutOfRangeException>(() => SetupMockMiddleware(
             meter: meter,
             new List<IIncomingRequestMetricEnricher>
             {
-                    new TestEnricher(16)
+                new TestEnricher(16)
             }));
     }
 
@@ -514,7 +525,7 @@ public class HttpMeteringTests
     public void HttpMeteringMiddleware_Fail_RepeatCustomDimensions()
     {
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         Assert.Throws<ArgumentException>(() => SetupMockMiddleware(
             meter: meter,
             new List<IIncomingRequestMetricEnricher>
@@ -528,7 +539,7 @@ public class HttpMeteringTests
     public void HttpMeteringMiddleware_Fail_RepeatDefaultDimensions()
     {
         using var meter = new Meter<HttpMeteringMiddleware>();
-        using var metricCollector = new MetricCollector(new List<string> { typeof(HttpMeteringMiddleware).FullName! });
+        using var metricCollector = new MetricCollector<long>(typeof(HttpMeteringMiddleware).FullName!, null, Metric.IncomingRequestMetricName);
         Assert.Throws<ArgumentException>(() => SetupMockMiddleware(
             meter: meter,
             new List<IIncomingRequestMetricEnricher>

@@ -90,7 +90,8 @@ public class TelemetryHealthChecksPublisherTest
         string expectedMetricStatus)
     {
         using var meter = new Meter<TelemetryHealthCheckPublisher>();
-        using var metricCollector = new MetricCollector(meter);
+        using var healthyMetricCollector = new MetricCollector<long>(meter, HealthReportMetricName);
+        using var unhealthyMetricCollector = new MetricCollector<long>(meter, UnhealthyHealthCheckMetricName);
 
         var logger = new FakeLogger<TelemetryHealthCheckPublisher>();
         var collector = logger.Collector;
@@ -110,13 +111,13 @@ public class TelemetryHealthChecksPublisherTest
             Assert.Equal(expectedLogLevel, collector.LatestRecord.Level);
         }
 
-        var latest = metricCollector.GetCounterValues<long>(HealthReportMetricName)!.LatestWritten!;
+        var latest = healthyMetricCollector.LatestMetricValueUpdated!;
 
         latest.Value.Should().Be(1);
-        latest.GetDimension("healthy").Should().Be(expectedMetricHealthy);
-        latest.GetDimension("status").Should().Be(expectedMetricStatus);
+        latest.Tags["healthy"].Should().Be(expectedMetricHealthy);
+        latest.Tags["status"].Should().Be(expectedMetricStatus);
 
-        var unhealthyCounters = metricCollector.GetCounterValues<long>(UnhealthyHealthCheckMetricName)!.AllValues;
+        var unhealthyCounters = unhealthyMetricCollector.SnapshotMetricValues();
 
         for (int i = 0; i < healthStatuses.Count; i++)
         {
@@ -140,8 +141,8 @@ public class TelemetryHealthChecksPublisherTest
     {
         foreach (var counter in counters)
         {
-            if (counter!.GetDimension("name")!.ToString() == healthy &&
-                counter!.GetDimension("status")!.ToString() == status)
+            if (counter!.Tags["name"]?.ToString() == healthy &&
+                counter!.Tags["status"]?.ToString() == status)
             {
                 return counter.Value;
             }
