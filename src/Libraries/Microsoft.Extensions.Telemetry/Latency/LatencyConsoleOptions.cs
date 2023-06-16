@@ -1,34 +1,34 @@
 ﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-namespace Microsoft.Extensions.Telemetry.Console;
+namespace Microsoft.Extensions.Telemetry;
 
 /// <summary>
 /// Options for console latency data exporter.
 /// </summary>
-public class LarencyConsoleOptions
+public class LatencyConsoleOptions
 {
     /// <summary>
     /// Gets or sets a value indicating whether to emit latency checkpoint information to the console.
     /// </summary>
-    /// <remarks>
+    /// <value>
     /// Defaults to <see langword="true" />.
-    /// </remarks>
+    /// </value>
     public bool OutputCheckpoints { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether to emit latency tag information to the console.
     /// </summary>
-    /// <remarks>
+    /// <value>
     /// Defaults to <see langword="true" />.
-    /// </remarks>
+    /// </value>
     public bool OutputTags { get; set; } = true;
 
     /// <summary>
     /// Gets or sets a value indicating whether to emit latency measure information to the console.
     /// </summary>
-    /// <remarks>
+    /// <value>
     /// Defaults to <see langword="true" />.
-    /// </remarks>
+    /// </value>
     public bool OutputMeasures { get; set; } = true;
 }
