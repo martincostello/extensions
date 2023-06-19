@@ -12,7 +12,7 @@ namespace Microsoft.Extensions.Diagnostics.ResourceMonitoring;
 /// <summary>
 /// Options for WindowsCounters.
 /// </summary>
-[Experimental]
+[Experimental(diagnosticId: "")]
 public class WindowsCountersOptions
 {
     internal const int MinimumCachingInterval = 100;
@@ -33,7 +33,7 @@ public class WindowsCountersOptions
     /// <value>
     /// The default value is 5 seconds.
     /// </value>
-    [Experimental]
+    [Experimental(diagnosticId: "")]
     [TimeSpan(MinimumCachingInterval, MaximumCachingInterval)]
     public TimeSpan CachingInterval { get; set; } = DefaultCachingInterval;
 }

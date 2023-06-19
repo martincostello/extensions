@@ -23,7 +23,7 @@ namespace Microsoft.Extensions.Http.AutoClient;
 /// }
 /// </code>
 /// </example>
-[Experimental]
+[Experimental(diagnosticId: "")]
 [AttributeUsage(AttributeTargets.Parameter)]
 [Conditional("CODE_GENERATION_ATTRIBUTES")]
 public sealed class QueryAttribute : Attribute

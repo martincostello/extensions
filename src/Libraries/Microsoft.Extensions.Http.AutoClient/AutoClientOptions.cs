@@ -21,7 +21,7 @@ namespace Microsoft.Extensions.Http.AutoClient;
 /// });
 /// </code>
 /// </example>
-[Experimental]
+[Experimental(diagnosticId: "")]
 public class AutoClientOptions
 {
     /// <summary>

@@ -266,7 +266,7 @@ public sealed class LogMethodAttribute : Attribute
     /// }
     /// </code>
     /// </example>
-    [Experimental]
+    [Experimental(diagnosticId: "")]
     public LogMethodAttribute()
     {
         EventId = 0;
